@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-light: #f8fafc;
+    --surface-light: #ffffff;
+    --surface-glass: rgba(255, 255, 255, 0.85);
+    --surface-card: rgba(255, 255, 255, 0.90);
+    --surface-hover: rgba(248, 250, 252, 0.95);
+    --border-subtle: rgba(15, 23, 42, 0.08);
+    --border-accent: rgba(20, 184, 166, 0.35);
+    --accent-teal: #0d9488;
+    --accent-emerald: #059669;
+    --accent-mint: #14b8a6;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+  }
+
+  *, *::before, *::after {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    letter-spacing: -0.012em;
+  }
+}
+
+/* Apple display typography helpers based on Technology Trends reference scale */
+.display-title {
+  letter-spacing: -0.032em;
+  line-height: 1.15;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  line-height: 2.125rem;
+  font-weight: 700;
+  letter-spacing: -0.032em;
+  color: #0f172a;
+}
+@media (min-width: 640px) {
+  .page-title {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+  }
+}
+
+.page-subtitle {
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+  color: #475569;
+  font-weight: 400;
+}
+
+.card-title {
+  font-size: 1.125rem;
+  line-height: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.015em;
+}
+
+.card-eyebrow {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.body-text {
+  font-size: 0.8125rem;
+  line-height: 1.375rem;
+  color: #334155;
+  font-weight: 400;
+}
+
+.body-text-sm {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: #475569;
+  font-weight: 400;
+}
+
+.metric-hero {
+  font-size: 2.25rem;
+  line-height: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-card {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Apple Light Glassmorphism surfaces */
+.glass-panel {
+  background: var(--surface-glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.04), 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+}
+
+.glass-card {
+  background: var(--surface-card);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(20, 184, 166, 0.3);
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.08), 0 0 20px -2px rgba(20, 184, 166, 0.1);
+}
+
+/* Thin internal scrollbar for dashboard viewport */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 184, 166, 0.6);
+}
