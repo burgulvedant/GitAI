@@ -6,14 +6,9 @@ __pycache__/
 *.pyo
 .pytest_cache/
 
-# Large Raw Data Dumps & Notebooks (Not needed by serverless function)
-data/raw/*.json
+# Large Raw Data Dumps & Notebooks (Not needed for production build or runtime)
+data/raw/
 notebooks/
 .agents/
 .git/
 .github/
-
-# Frontend Sources (Built into static dist directory by Vite)
-app/frontend/src/
-app/frontend/node_modules/
-app/frontend/public/
