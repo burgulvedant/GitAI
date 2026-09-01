@@ -1,25 +1,29 @@
 """FastAPI backend server for GitAI.
 
-Bridges the React frontend to the verified Phase 3-5 Data Science and Machine Learning pipelines.
+Bridges the React frontend to the verified Phase 3-5 Data Science and Machine Learning pipelines
+using lightweight, zero-bloat standard library data processing and exact linear model inference.
 """
 
 import os
 import re
+import csv
+import json
 import math
 import logging
+import statistics
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
+from collections import Counter, defaultdict
 
-import joblib
-import numpy as np
-import pandas as pd
 import requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
+
+from src.model_inference import predict_popularity
 
 # Load environment variables
 project_root = Path(__file__).resolve().parent.parent
@@ -30,24 +34,50 @@ logger = logging.getLogger(__name__)
 
 # Paths
 cleaned_csv_path = project_root / "data" / "processed" / "github_repositories_cleaned.csv"
-ml_csv_path = project_root / "data" / "processed" / "github_repositories_ml.csv"
-model_path = project_root / "models" / "best_model.pkl"
+model_weights_path = project_root / "models" / "model_weights.json"
 comparison_path = project_root / "models" / "model_comparison.csv"
 dist_path = project_root / "app" / "frontend" / "dist"
 
-# Verify files exist
+# Verify required data files exist
 assert cleaned_csv_path.exists(), f"Missing cleaned CSV at {cleaned_csv_path}"
-assert model_path.exists(), f"Missing best model at {model_path}"
+assert model_weights_path.exists(), f"Missing model weights at {model_weights_path}"
 
-# Load datasets and model
-df_cleaned = pd.read_csv(cleaned_csv_path, keep_default_na=False)
-best_model_pipeline = joblib.load(model_path)
-df_comparison = pd.read_csv(comparison_path) if comparison_path.exists() else None
+# 1. Load Cleaned Dataset into Memory
+dataset_records: List[Dict[str, Any]] = []
+with open(cleaned_csv_path, mode="r", encoding="utf-8") as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        item = dict(row)
+        item["stars"] = int(item["stars"])
+        item["forks"] = int(item["forks"])
+        item["open_issues"] = int(item["open_issues"])
+        dataset_records.append(item)
+
+# 2. Load Model Weights
+with open(model_weights_path, mode="r", encoding="utf-8") as f:
+    model_weights: Dict[str, Any] = json.load(f)
+
+# 3. Load Model Benchmarks Comparison (if exists)
+benchmarks_list: List[Dict[str, Any]] = []
+if comparison_path.exists():
+    with open(comparison_path, mode="r", encoding="utf-8") as f:
+        bench_reader = csv.DictReader(f)
+        for row in bench_reader:
+            bench_item = {}
+            for k, v in row.items():
+                try:
+                    bench_item[k] = float(v)
+                except ValueError:
+                    bench_item[k] = v
+            benchmarks_list.append(bench_item)
 
 # Fixed snapshot reference timestamp from Phase 5
-created_dt = pd.to_datetime(df_cleaned["created_at"], utc=True)
-pushed_dt = pd.to_datetime(df_cleaned["pushed_at"], utc=True)
-T_SNAPSHOT = pushed_dt.max()
+pushed_dates = [
+    datetime.fromisoformat(r["pushed_at"].replace("Z", "+00:00"))
+    for r in dataset_records
+    if r.get("pushed_at")
+]
+T_SNAPSHOT = max(pushed_dates) if pushed_dates else datetime.now(timezone.utc)
 
 app = FastAPI(
     title="GitAI Backend API",
@@ -97,7 +127,6 @@ def fetch_github_metadata(owner: str, repo: str) -> Dict[str, Any]:
         if response.status_code == 404:
             raise HTTPException(status_code=404, detail=f"GitHub repository '{owner}/{repo}' not found or is private.")
         elif response.status_code == 403:
-            # Rate limit or forbidden
             msg = response.json().get("message", "GitHub API rate limit exceeded.")
             raise HTTPException(status_code=429, detail=f"GitHub API notice: {msg}")
         elif response.status_code != 200:
@@ -109,12 +138,26 @@ def fetch_github_metadata(owner: str, repo: str) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Network error connecting to GitHub: {str(e)}")
 
 
+def calc_sample_skewness(data: List[int]) -> float:
+    """Calculates Fisher-Pearson sample skewness matching pandas.Series.skew()."""
+    n = len(data)
+    if n < 3:
+        return 0.0
+    mean_val = sum(data) / n
+    variance = sum((x - mean_val) ** 2 for x in data) / (n - 1)
+    std_dev = math.sqrt(variance)
+    if std_dev == 0:
+        return 0.0
+    m3 = sum(((x - mean_val) / std_dev) ** 3 for x in data)
+    return (n / ((n - 1) * (n - 2))) * m3
+
+
 @app.get("/api/health")
 def health_check():
     return {
         "status": "healthy",
-        "dataset_records": len(df_cleaned),
-        "model_loaded": best_model_pipeline is not None,
+        "dataset_records": len(dataset_records),
+        "model_loaded": bool(model_weights is not None),
         "snapshot_timestamp": T_SNAPSHOT.isoformat()
     }
 
@@ -122,13 +165,12 @@ def health_check():
 @app.get("/api/dataset/summary")
 def get_dataset_summary():
     """Returns macro dataset metrics for Technology Trends and Overview."""
-    total_repos = len(df_cleaned)
-    lang_counts = df_cleaned["language"].value_counts().to_dict()
+    total_repos = len(dataset_records)
+    lang_counts = dict(Counter(r["language"] for r in dataset_records))
 
-    # Metrics summary
-    stars_s = df_cleaned["stars"]
-    forks_s = df_cleaned["forks"]
-    issues_s = df_cleaned["open_issues"]
+    stars_list = [r["stars"] for r in dataset_records]
+    forks_list = [r["forks"] for r in dataset_records]
+    issues_list = [r["open_issues"] for r in dataset_records]
 
     # Topics breakdown
     def parse_topics(t):
@@ -136,26 +178,38 @@ def get_dataset_summary():
             return []
         return [tag.strip() for tag in str(t).split(",") if tag.strip()]
 
-    all_topics = [tag for sub in df_cleaned["topics"].apply(parse_topics) for tag in sub]
-    top_topics = pd.Series(all_topics).value_counts().head(20).to_dict()
+    all_topics = [tag for r in dataset_records for tag in parse_topics(r.get("topics", ""))]
+    top_topics = dict(Counter(all_topics).most_common(20))
 
     # License breakdown
-    license_counts = df_cleaned["license"].value_counts().head(8).to_dict()
+    license_counts = dict(Counter(r["license"] for r in dataset_records if r.get("license")).most_common(8))
 
     # Language comparative table
+    lang_groups = defaultdict(list)
+    for r in dataset_records:
+        lang = r["language"]
+        if lang != "Unknown":
+            lang_groups[lang].append(r)
+
     lang_comparison = []
-    for lang, group in df_cleaned.groupby("language"):
-        if lang == "Unknown":
-            continue
+    for lang in sorted(lang_groups.keys()):
+        group = lang_groups[lang]
+        stars = [x["stars"] for x in group]
+        forks = [x["forks"] for x in group]
+        issues = [x["open_issues"] for x in group]
+        ages = [
+            (T_SNAPSHOT - datetime.fromisoformat(x["created_at"].replace("Z", "+00:00"))).total_seconds() / 86400 / 365.25
+            for x in group
+        ]
         lang_comparison.append({
             "language": lang,
             "count": len(group),
-            "median_stars": float(group["stars"].median()),
-            "mean_stars": float(group["stars"].mean()),
-            "median_forks": float(group["forks"].median()),
-            "mean_forks": float(group["forks"].mean()),
-            "median_issues": float(group["open_issues"].median()),
-            "median_age_years": round(float(((T_SNAPSHOT - pd.to_datetime(group["created_at"], utc=True)).dt.total_seconds() / 86400 / 365.25).median()), 2)
+            "median_stars": float(statistics.median(stars)),
+            "mean_stars": float(sum(stars) / len(stars)),
+            "median_forks": float(statistics.median(forks)),
+            "mean_forks": float(sum(forks) / len(forks)),
+            "median_issues": float(statistics.median(issues)),
+            "median_age_years": round(float(statistics.median(ages)), 2)
         })
 
     return {
@@ -163,25 +217,25 @@ def get_dataset_summary():
         "language_distribution": lang_counts,
         "metrics": {
             "stars": {
-                "min": int(stars_s.min()),
-                "median": float(stars_s.median()),
-                "mean": round(float(stars_s.mean()), 1),
-                "max": int(stars_s.max()),
-                "skewness": round(float(stars_s.skew()), 2)
+                "min": min(stars_list),
+                "median": float(statistics.median(stars_list)),
+                "mean": round(sum(stars_list) / total_repos, 1),
+                "max": max(stars_list),
+                "skewness": round(calc_sample_skewness(stars_list), 2)
             },
             "forks": {
-                "min": int(forks_s.min()),
-                "median": float(forks_s.median()),
-                "mean": round(float(forks_s.mean()), 1),
-                "max": int(forks_s.max()),
-                "skewness": round(float(forks_s.skew()), 2)
+                "min": min(forks_list),
+                "median": float(statistics.median(forks_list)),
+                "mean": round(sum(forks_list) / total_repos, 1),
+                "max": max(forks_list),
+                "skewness": round(calc_sample_skewness(forks_list), 2)
             },
             "open_issues": {
-                "min": int(issues_s.min()),
-                "median": float(issues_s.median()),
-                "mean": round(float(issues_s.mean()), 1),
-                "max": int(issues_s.max()),
-                "skewness": round(float(issues_s.skew()), 2)
+                "min": min(issues_list),
+                "median": float(statistics.median(issues_list)),
+                "mean": round(sum(issues_list) / total_repos, 1),
+                "max": max(issues_list),
+                "skewness": round(calc_sample_skewness(issues_list), 2)
             }
         },
         "top_topics": top_topics,
@@ -201,36 +255,38 @@ def get_repositories(
     page_size: int = Query(20, ge=1, le=100)
 ):
     """Filterable, searchable catalog from the verified 2,520 dataset."""
-    filtered = df_cleaned.copy()
+    filtered = list(dataset_records)
 
     if language and language != "All":
-        filtered = filtered[filtered["language"].str.lower() == language.lower()]
+        lang_lower = language.lower()
+        filtered = [r for r in filtered if r["language"].lower() == lang_lower]
 
     if tier:
-        if tier.lower() == "high":
-            filtered = filtered[filtered["stars"] > 2000]
-        elif tier.lower() == "mid":
-            filtered = filtered[(filtered["stars"] > 200) & (filtered["stars"] <= 2000)]
-        elif tier.lower() == "low":
-            filtered = filtered[filtered["stars"] <= 200]
+        tier_lower = tier.lower()
+        if tier_lower == "high":
+            filtered = [r for r in filtered if r["stars"] > 2000]
+        elif tier_lower == "mid":
+            filtered = [r for r in filtered if 200 < r["stars"] <= 2000]
+        elif tier_lower == "low":
+            filtered = [r for r in filtered if r["stars"] <= 200]
 
     if q:
         q_lower = q.lower().strip()
-        filtered = filtered[
-            filtered["full_name"].str.lower().str.contains(q_lower) |
-            filtered["description"].str.lower().str.contains(q_lower) |
-            filtered["topics"].str.lower().str.contains(q_lower)
+        filtered = [
+            r for r in filtered
+            if q_lower in r["full_name"].lower()
+            or q_lower in r["description"].lower()
+            or q_lower in r["topics"].lower()
         ]
 
     # Sorting
-    ascending = (order.lower() == "asc")
-    if sort_by in filtered.columns:
-        filtered = filtered.sort_values(by=sort_by, ascending=ascending)
+    reverse = (order.lower() == "desc")
+    filtered.sort(key=lambda x: x.get(sort_by, 0), reverse=reverse)
 
     total_matched = len(filtered)
     start_idx = (page - 1) * page_size
     end_idx = start_idx + page_size
-    page_items = filtered.iloc[start_idx:end_idx].to_dict(orient="records")
+    page_items = filtered[start_idx:end_idx]
 
     return {
         "total": total_matched,
@@ -244,23 +300,23 @@ def get_repositories(
 @app.get("/api/models/benchmarks")
 def get_model_benchmarks():
     """Returns Phase 5C model performance comparisons and feature weights."""
-    benchmarks = []
-    if df_comparison is not None:
-        benchmarks = df_comparison.to_dict(orient="records")
+    all_names = model_weights["all_features"]
+    coefficients = model_weights["coefficients"]
 
-    # Extract Logistic Regression coefficients for interpretability
-    lr_clf = best_model_pipeline.named_steps["classifier"]
-    prep = best_model_pipeline.named_steps["preprocessor"]
-    cat_names = prep.named_transformers_["cat"].get_feature_names_out(["language"])
-    num_cols = prep.named_transformers_["num"].feature_names_in_
-    all_names = list(num_cols) + list(cat_names)
-    weights = pd.Series(lr_clf.coef_[0], index=all_names).sort_values(ascending=False).to_dict()
+    # Feature weights sorted descending
+    weights_dict = {
+        name: coef for name, coef in sorted(
+            zip(all_names, coefficients),
+            key=lambda x: x[1],
+            reverse=True
+        )
+    }
 
     return {
         "best_model": "Logistic Regression Pipeline",
-        "benchmarks": benchmarks,
-        "feature_weights": weights,
-        "intercept": float(lr_clf.intercept_[0])
+        "benchmarks": benchmarks_list,
+        "feature_weights": weights_dict,
+        "intercept": float(model_weights["intercept"])
     }
 
 
@@ -332,17 +388,16 @@ def analyze_repository(req: AnalyzeRequest):
     raw_pushed_at = raw.get("pushed_at") or raw.get("updated_at") or raw_created_at
 
     # 2. Derive Exact Phase 5B/5C Features
-    created_dt_val = pd.to_datetime(raw_created_at, utc=True)
-    pushed_dt_val = pd.to_datetime(raw_pushed_at, utc=True)
+    created_dt_val = datetime.fromisoformat(raw_created_at.replace("Z", "+00:00")) if raw_created_at else datetime.now(timezone.utc)
+    pushed_dt_val = datetime.fromisoformat(raw_pushed_at.replace("Z", "+00:00")) if raw_pushed_at else created_dt_val
 
-    # Use now or snapshot reference for time deltas
     now_utc = datetime.now(timezone.utc)
     repo_age_days = max((now_utc - created_dt_val).total_seconds() / 86400.0, 0.1)
     repo_age_years = repo_age_days / 365.25
     days_since_last_push = max((now_utc - pushed_dt_val).total_seconds() / 86400.0, 0.0)
 
-    log_forks = float(np.log1p(raw_forks))
-    log_open_issues = float(np.log1p(raw_issues))
+    log_forks = float(math.log1p(raw_forks))
+    log_open_issues = float(math.log1p(raw_issues))
     topic_count = len(raw_topics)
     has_topics = 1 if topic_count > 0 else 0
 
@@ -350,60 +405,36 @@ def analyze_repository(req: AnalyzeRequest):
     desc_length = len(raw_desc) if has_desc == 1 else 0
     has_license = 1 if raw_license and raw_license != "No license specified" else 0
 
-    # Direct exact annualized velocities (NO 3.74-year floor)
     safe_age_years = max(repo_age_years, 1.0 / 365.25)
     forks_per_year = float(raw_forks / safe_age_years)
     issues_per_year = float(raw_issues / safe_age_years)
 
-    # 3. Assemble Non-Leaking Feature DataFrame for ML Inference
+    # 3. Assemble Features for ML Inference
     feature_dict = {
-        "log_forks": [log_forks],
-        "log_open_issues": [log_open_issues],
-        "repo_age_days": [repo_age_days],
-        "repo_age_years": [repo_age_years],
-        "days_since_last_push": [days_since_last_push],
-        "topic_count": [topic_count],
-        "has_topics": [has_topics],
-        "has_description": [has_desc],
-        "description_length": [desc_length],
-        "has_license": [has_license],
-        "language": [raw_lang],
-        "forks_per_year": [forks_per_year],
-        "issues_per_year": [issues_per_year]
+        "log_forks": log_forks,
+        "log_open_issues": log_open_issues,
+        "repo_age_days": repo_age_days,
+        "repo_age_years": repo_age_years,
+        "days_since_last_push": days_since_last_push,
+        "topic_count": topic_count,
+        "has_topics": has_topics,
+        "has_description": has_desc,
+        "description_length": desc_length,
+        "has_license": has_license,
+        "language": raw_lang,
+        "forks_per_year": forks_per_year,
+        "issues_per_year": issues_per_year
     }
-    df_features = pd.DataFrame(feature_dict)
 
-    # 4. Model Inference via Serialized Pipeline
-    pred_class = int(best_model_pipeline.predict(df_features)[0])
-    pred_probs = best_model_pipeline.predict_proba(df_features)[0]
-    p_high = float(pred_probs[1])
-    p_low = float(pred_probs[0])
+    # 4. Model Inference via Pure Python Inference Engine
+    pred_class, p_high, p_low, feature_impacts = predict_popularity(feature_dict, model_weights)
     confidence = round(max(p_high, p_low) * 100, 1)
 
-    # 5. Feature Contribution Breakdown
-    prep = best_model_pipeline.named_steps["preprocessor"]
-    lr = best_model_pipeline.named_steps["classifier"]
-    X_transformed = prep.transform(df_features)
-    contributions = X_transformed[0] * lr.coef_[0]
-
-    cat_names = prep.named_transformers_["cat"].get_feature_names_out(["language"])
-    num_cols = prep.named_transformers_["num"].feature_names_in_
-    all_names = list(num_cols) + list(cat_names)
-
-    feature_impacts = []
-    for name, impact in zip(all_names, contributions):
-        if abs(impact) > 0.05:
-            feature_impacts.append({
-                "feature": name,
-                "impact": round(float(impact), 3),
-                "direction": "positive" if impact > 0 else "negative"
-            })
-    feature_impacts.sort(key=lambda x: abs(x["impact"]), reverse=True)
-
-    # Dataset percentile benchmarking
-    star_pct = round(float((df_cleaned["stars"] < raw_stars).mean() * 100), 1)
-    fork_pct = round(float((df_cleaned["forks"] < raw_forks).mean() * 100), 1)
-    issue_pct = round(float((df_cleaned["open_issues"] < raw_issues).mean() * 100), 1)
+    # 5. Dataset Percentile Benchmarking
+    total_db = len(dataset_records)
+    star_pct = round(sum(1 for r in dataset_records if r["stars"] < raw_stars) / total_db * 100, 1)
+    fork_pct = round(sum(1 for r in dataset_records if r["forks"] < raw_forks) / total_db * 100, 1)
+    issue_pct = round(sum(1 for r in dataset_records if r["open_issues"] < raw_issues) / total_db * 100, 1)
 
     return {
         "repository": {
