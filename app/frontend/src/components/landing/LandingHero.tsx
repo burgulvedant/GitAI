@@ -36,7 +36,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/85 border border-slate-200/80 backdrop-blur-md shadow-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-700">
-              GitHub Repository Data Science Project
+              GitAI
             </span>
           </div>
         </motion.div>
