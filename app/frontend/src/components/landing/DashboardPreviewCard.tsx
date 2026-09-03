@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
-import { ArrowUpRight, Activity, TrendingUp, BarChart2, Compass } from 'lucide-react';
+import { ArrowUpRight, TrendingUp, BarChart2, Compass } from 'lucide-react';
+import gitAiLogo from '../../assets/logo.png';
 
 interface DashboardPreviewCardProps {
   onExpand: () => void;
@@ -13,15 +14,18 @@ export const DashboardPreviewCard: React.FC<DashboardPreviewCardProps> = ({ onEx
       className="w-full max-w-5xl mx-auto rounded-[32px] bg-[#F8FAFC]/95 backdrop-blur-2xl border border-white/80 p-6 sm:p-7 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.14)] cursor-pointer group relative overflow-hidden transition-all duration-300 hover:shadow-[0_25px_70px_-10px_rgba(20,184,166,0.18)] hover:-translate-y-0.5"
       transition={{
         type: 'spring',
-        damping: 24,
-        stiffness: 260,
-        mass: 0.8
+        stiffness: 300,
+        damping: 30
       }}
     >
-      {/* Floating Action Pill */}
-      <div className="absolute top-5 right-6 z-20 flex items-center gap-2">
-        <span className="text-xs font-semibold text-slate-900 bg-white border border-slate-200 px-3.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-xs group-hover:scale-105 transition-transform">
-          <span>Open Dashboard</span>
+      {/* Top Floating Badge Prompt */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Interactive Analytics Preview</span>
+        </div>
+        <span className="text-xs font-medium text-slate-700 group-hover:text-teal-600 transition-colors flex items-center gap-1 bg-white/80 px-3 py-1 rounded-full border border-slate-200/60 shadow-2xs">
+          <span>Click to Enter Dashboard</span>
           <ArrowUpRight className="w-3.5 h-3.5 text-teal-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
         </span>
       </div>
@@ -31,9 +35,7 @@ export const DashboardPreviewCard: React.FC<DashboardPreviewCardProps> = ({ onEx
         {/* Top Header Row Matching Shell Nav */}
         <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center shadow-xs">
-              <Activity className="w-4 h-4 text-white stroke-[2.5]" />
-            </div>
+            <img src={gitAiLogo} alt="GitAI Logo" className="w-7 h-7 object-contain" />
             <span className="text-base font-bold text-slate-900 tracking-tight">GitAI</span>
           </div>
 

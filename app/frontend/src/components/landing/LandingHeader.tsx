@@ -1,4 +1,5 @@
-import { Activity, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+import gitAiLogo from '../../assets/logo.png';
 
 interface LandingHeaderProps {
   onOpenDashboard: () => void;
@@ -9,17 +10,10 @@ export const LandingHeader: React.FC<LandingHeaderProps> = ({ onOpenDashboard })
     <header className="w-full max-w-6xl mx-auto px-6 py-6 flex items-center justify-between z-10 relative">
       {/* Brand Logo & Wordmark */}
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center shadow-md">
-          <Activity className="w-4 h-4 text-white stroke-[2.5]" />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-base font-semibold tracking-tight text-slate-900">
-            GitAI
-          </span>
-          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/80 text-slate-600 border border-slate-200/80 shadow-xs">
-            v1.0
-          </span>
-        </div>
+        <img src={gitAiLogo} alt="GitAI Logo" className="w-8 h-8 object-contain" />
+        <span className="text-base font-semibold tracking-tight text-slate-900">
+          GitAI
+        </span>
       </div>
 
       {/* Minimal Landing Action */}

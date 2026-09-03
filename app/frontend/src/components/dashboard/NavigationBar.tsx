@@ -4,9 +4,9 @@ import {
   BrainCircuit,
   Lightbulb,
   Target,
-  ArrowLeft,
-  Activity
+  ArrowLeft
 } from 'lucide-react';
+import gitAiLogo from '../../assets/logo.png';
 
 export type DashboardTab = 'trends' | 'analyze' | 'models' | 'insights' | 'goals';
 
@@ -43,9 +43,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
         </button>
 
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center shadow-xs">
-            <Activity className="w-4.5 h-4.5 text-white stroke-[2.5]" />
-          </div>
+          <img src={gitAiLogo} alt="GitAI Logo" className="w-8 h-8 object-contain" />
           <div className="flex items-baseline gap-1.5">
             <span className="text-lg font-bold text-slate-900 tracking-tight">GitAI</span>
             <span className="hidden sm:inline text-xs font-medium text-slate-500">
